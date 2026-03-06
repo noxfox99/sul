@@ -1,0 +1,1219 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Сапёр 2.0 — Single File (Mines + Powerups)</title>
+  <style>
+    :root{
+      --bg:#070b12;
+      --panel:#0f1724;
+      --panel2:#0c1320;
+      --text:#e8f0ff;
+      --muted:#9bb0d0;
+      --accent:#7aa7ff;
+      --good:#6bffb1;
+      --bad:#ff6b6b;
+      --warn:#ffd36b;
+
+      --cell:32px; /* JS will set */
+      --gap:2px;
+    }
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      background: radial-gradient(1200px 800px at 50% 0%, #0e1830, var(--bg));
+      color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+      overflow:hidden;
+    }
+    .app{
+      position:fixed; inset:0;
+      display:flex; flex-direction:column;
+      gap:10px;
+      padding:10px;
+      min-height:0;
+    }
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 12px;
+      border-radius:16px;
+      background: rgba(15,23,36,0.72);
+      border:1px solid rgba(255,255,255,0.10);
+      backdrop-filter: blur(8px);
+      flex-wrap:wrap;
+    }
+    .hud{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .chip{
+      padding:6px 10px;
+      border-radius:12px;
+      background: rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.10);
+      font-weight:900;
+      letter-spacing:0.2px;
+      white-space:nowrap;
+    }
+    .chip .label{ color:var(--muted); margin-right:6px; font-weight:900; }
+
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+    .btn{
+      cursor:pointer;
+      border:1px solid rgba(255,255,255,0.12);
+      background: linear-gradient(180deg, rgba(27,43,68,0.95), rgba(22,35,58,0.95));
+      color:var(--text);
+      padding:8px 12px;
+      border-radius:14px;
+      font-weight:1000;
+      letter-spacing:0.2px;
+      user-select:none;
+      touch-action:manipulation;
+    }
+    .btn:hover{ border-color:rgba(255,255,255,0.24); }
+    .btn:active{ transform:translateY(1px); }
+    .btn--ghost{
+      background:transparent;
+      border-color:rgba(255,255,255,0.14);
+      color:var(--muted);
+    }
+
+    .main{
+      flex:1;
+      min-height:0;
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap:10px;
+    }
+
+    .boardWrap{
+      position:relative;
+      min-height:0;
+      border-radius:18px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.03);
+      box-shadow: 0 18px 60px rgba(0,0,0,0.40);
+      display:grid;
+      place-items:center;
+      padding:10px;
+    }
+
+    .board{
+      --cols:16;
+      --rows:16;
+      display:grid;
+      grid-template-columns: repeat(var(--cols), var(--cell));
+      grid-template-rows: repeat(var(--rows), var(--cell));
+      gap:var(--gap);
+      touch-action:none;
+      user-select:none;
+    }
+
+    .cell{
+      width:var(--cell);
+      height:var(--cell);
+      border-radius: max(7px, calc(var(--cell) * 0.18));
+      border:1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.05);
+      display:grid;
+      place-items:center;
+      font-weight:1000;
+      color: rgba(232,240,255,0.95);
+      position:relative;
+      overflow:hidden;
+    }
+    .cell.closed{
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+      border-color: rgba(255,255,255,0.10);
+      cursor:pointer;
+    }
+    .cell.closed:hover{
+      border-color: rgba(122,167,255,0.35);
+      box-shadow: 0 0 0 2px rgba(122,167,255,0.10) inset;
+    }
+
+    .cell.open{
+      background: rgba(255,255,255,0.02);
+      border-color: rgba(255,255,255,0.06);
+      cursor:default;
+    }
+
+    .cell.flag::after{
+      content:"🚩";
+      font-size: calc(var(--cell) * 0.58);
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.25));
+    }
+    .cell.mine.open{
+      background: rgba(255,107,107,0.10);
+      border-color: rgba(255,107,107,0.22);
+    }
+    .cell.mine.open::after{
+      content:"💣";
+      font-size: calc(var(--cell) * 0.60);
+      filter: drop-shadow(0 2px 10px rgba(0,0,0,0.35));
+    }
+
+    .num{
+      font-size: calc(var(--cell) * 0.52);
+      text-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    }
+
+    /* Powerups */
+    .cell.pu::after{
+      content: attr(data-pu);
+      font-size: calc(var(--cell) * 0.56);
+      filter: drop-shadow(0 2px 10px rgba(0,0,0,0.35));
+    }
+    .cell.open.pu{
+      background: rgba(122,167,255,0.10);
+      border-color: rgba(122,167,255,0.22);
+    }
+
+    /* Focus for keyboard */
+    .cell.focus{
+      outline: 2px solid rgba(122,167,255,0.55);
+      outline-offset: -2px;
+    }
+
+    .side{
+      width: min(340px, 42vw);
+      min-width: 260px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      min-height:0;
+    }
+    .panel{
+      padding:12px;
+      border-radius:16px;
+      background: rgba(15,23,36,0.72);
+      border:1px solid rgba(255,255,255,0.10);
+      backdrop-filter: blur(8px);
+    }
+    .panelTitle{
+      font-weight:1000;
+      letter-spacing:0.4px;
+      margin-bottom:8px;
+      font-size:14px;
+      color: rgba(232,240,255,0.95);
+    }
+    .muted{ color:var(--muted); font-weight:900; font-size:12px; line-height:1.35; }
+    .krow{ display:flex; justify-content:space-between; gap:10px; margin:6px 0; }
+    .badge{
+      padding:4px 8px;
+      border-radius:999px;
+      background: rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.10);
+      font-weight:1000;
+      font-size:12px;
+      white-space:nowrap;
+    }
+    .badge.good{ border-color: rgba(107,255,177,0.25); }
+    .badge.warn{ border-color: rgba(255,211,107,0.25); }
+    .badge.bad{ border-color: rgba(255,107,107,0.25); }
+
+    /* Overlay end */
+    .overlay{
+      position:absolute;
+      inset:0;
+      display:grid;
+      place-items:center;
+      background: rgba(0,0,0,0.55);
+      z-index:20;
+      padding:14px;
+    }
+    .hidden{ display:none !important; }
+    .endPanel{
+      width:min(560px, 92vw);
+      padding:16px;
+      border-radius:18px;
+      background: rgba(15,23,36,0.96);
+      border:1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 20px 70px rgba(0,0,0,0.60);
+      text-align:center;
+    }
+    .endTitle{
+      font-size:32px;
+      font-weight:1100;
+      letter-spacing:1px;
+    }
+    .endSub{
+      margin-top:8px;
+      color:var(--muted);
+      font-weight:1000;
+      line-height:1.35;
+    }
+    .endActions{
+      margin-top:14px;
+      display:flex;
+      justify-content:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    /* Mobile bottom controls */
+    .bottombar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 12px;
+      border-radius:16px;
+      background: rgba(15,23,36,0.72);
+      border:1px solid rgba(255,255,255,0.10);
+      backdrop-filter: blur(8px);
+      flex-wrap:wrap;
+    }
+    .dpad{
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    }
+    .dbtn{
+      width:44px; height:44px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      font-size:18px;
+      font-weight:1100;
+      cursor:pointer;
+      touch-action:manipulation;
+      user-select:none;
+    }
+    .dbtn:active{ transform:translateY(1px); }
+    .dbtn.big{
+      width:auto;
+      padding:0 12px;
+      font-size:14px;
+      font-weight:1100;
+    }
+
+    @media (max-width: 980px){
+      .main{ grid-template-columns: 1fr; }
+      .side{ width:100%; min-width: unset; flex-direction:row; flex-wrap:wrap; }
+      .panel{ flex:1; min-width: 240px; }
+    }
+    @media (max-height: 690px){
+      .app{ gap:8px; padding:8px; }
+      .topbar{ padding:8px 10px; }
+      .bottombar{ padding:8px 10px; }
+      .dbtn{ width:40px; height:40px; border-radius:12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="hud">
+        <div class="chip"><span class="label">Mode:</span><span id="hudMode">Normal</span></div>
+        <div class="chip"><span class="label">Time:</span><span id="hudTime">00:00</span></div>
+        <div class="chip"><span class="label">Mines:</span><span id="hudMines">0</span></div>
+        <div class="chip"><span class="label">Flags:</span><span id="hudFlags">0</span></div>
+        <div class="chip"><span class="label">Safe left:</span><span id="hudSafeLeft">0</span></div>
+      </div>
+      <div class="actions">
+        <button id="btnNew" class="btn">New Game</button>
+        <button id="btnDiff" class="btn btn--ghost">Difficulty: Medium</button>
+        <button id="btnPause" class="btn btn--ghost">Pause (P)</button>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="boardWrap" id="boardWrap">
+        <div id="board" class="board" aria-label="Minesweeper board"></div>
+
+        <div id="endOverlay" class="overlay hidden">
+          <div class="endPanel">
+            <div id="endTitle" class="endTitle">YOU WIN</div>
+            <div id="endSub" class="endSub"></div>
+            <div class="endActions">
+              <button id="btnAgain" class="btn">Play again</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="side">
+        <div class="panel">
+          <div class="panelTitle">Сапёр 2.0 — что нового</div>
+          <div class="muted">
+            Это классический сапёр, но с бонусами:
+            <div class="krow"><span class="badge good">🛡 Shield</span><span class="muted">первая мина не убивает</span></div>
+            <div class="krow"><span class="badge warn">🔎 Scan</span><span class="muted">открывает 3×3 вокруг</span></div>
+            <div class="krow"><span class="badge good">🧲 Magnet</span><span class="muted">авто-отмечает очевидные мины*</span></div>
+            <div class="krow"><span class="badge warn">⏳ Slow</span><span class="muted">замедляет таймер на 10 сек</span></div>
+            <div class="muted" style="margin-top:8px;">
+              * Magnet — “подсказка”: если у открытой цифры рядом ровно столько закрытых клеток, сколько нужно мин — эти клетки помечаются флагами.
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panelTitle">Управление</div>
+          <div class="muted">
+            <b>ЛКМ / тап</b> — открыть клетку<br/>
+            <b>ПКМ / долгий тап</b> — флаг 🚩<br/>
+            <b>Space</b> — открыть клетку под курсором<br/>
+            <b>F</b> — поставить/снять флаг<br/>
+            <b>WASD / стрелки</b> — перемещать курсор<br/>
+            <b>P</b> — пауза<br/>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panelTitle">Статус бонусов</div>
+          <div class="krow"><span class="badge good">🛡 Shield:</span><span id="stShield" class="badge">0</span></div>
+          <div class="krow"><span class="badge warn">🔎 Scan:</span><span id="stScan" class="badge">0</span></div>
+          <div class="krow"><span class="badge good">🧲 Magnet:</span><span id="stMagnet" class="badge">OFF</span></div>
+          <div class="krow"><span class="badge warn">⏳ Slow:</span><span id="stSlow" class="badge">0s</span></div>
+          <div class="muted" style="margin-top:8px;">
+            Бонусы выпадают случайно при открытии безопасных клеток.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottombar">
+      <div class="dpad">
+        <button class="dbtn" data-m="up">▲</button>
+        <button class="dbtn" data-m="left">◀</button>
+        <button class="dbtn" data-m="down">▼</button>
+        <button class="dbtn" data-m="right">▶</button>
+        <button class="dbtn big" id="btnOpen">Open</button>
+        <button class="dbtn big" id="btnFlag">Flag</button>
+      </div>
+      <div class="muted">
+        Mobile: свайп по полю — двигать курсор, тап — открыть, долгий тап — флаг.
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    "use strict";
+
+    // ============================================================
+    // Difficulty presets
+    // ============================================================
+    const DIFFS = [
+      { name:"Easy",   cols:10, rows:10, mines:12 },
+      { name:"Medium", cols:16, rows:16, mines:40 },
+      { name:"Hard",   cols:24, rows:18, mines:85 }
+    ];
+    let diffIndex = 1;
+
+    // ============================================================
+    // DOM
+    // ============================================================
+    const boardWrap = document.getElementById("boardWrap");
+    const boardEl = document.getElementById("board");
+
+    const hudMode = document.getElementById("hudMode");
+    const hudTime = document.getElementById("hudTime");
+    const hudMines = document.getElementById("hudMines");
+    const hudFlags = document.getElementById("hudFlags");
+    const hudSafeLeft = document.getElementById("hudSafeLeft");
+
+    const btnNew = document.getElementById("btnNew");
+    const btnDiff = document.getElementById("btnDiff");
+    const btnPause = document.getElementById("btnPause");
+
+    const endOverlay = document.getElementById("endOverlay");
+    const endTitle = document.getElementById("endTitle");
+    const endSub = document.getElementById("endSub");
+    const btnAgain = document.getElementById("btnAgain");
+
+    const stShield = document.getElementById("stShield");
+    const stScan = document.getElementById("stScan");
+    const stMagnet = document.getElementById("stMagnet");
+    const stSlow = document.getElementById("stSlow");
+
+    const btnOpen = document.getElementById("btnOpen");
+    const btnFlag = document.getElementById("btnFlag");
+
+    // D-pad movement
+    document.querySelectorAll(".dbtn[data-m]").forEach(b => {
+      b.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        moveCursor(b.getAttribute("data-m"));
+      }, {passive:false});
+    });
+
+    // ============================================================
+    // Game state
+    // ============================================================
+    let cols=16, rows=16, minesTotal=40;
+    let grid = []; // cells: {mine, open, flag, n, pu}
+    let firstClick = true;
+    let flags = 0;
+    let openCount = 0;
+    let safeTotal = 0; // = rows*cols - minesTotal
+
+    let paused = false;
+    let over = false;
+    let win = false;
+
+    // Timer + Slow bonus
+    let startMs = 0;
+    let lastShownSec = -1;
+    let timerHandle = null;
+    let slowSecondsLeft = 0; // slows time display by subtracting consumed seconds
+
+    // Powerups inventory/state
+    let invShield = 0; // first mine doesn't kill
+    let invScan = 0;   // number of scans available
+    let magnetOn = false;
+
+    // Cursor for keyboard/mobile
+    let cursor = { x:0, y:0 };
+
+    // Long press (mobile)
+    let pressTimer = null;
+    let pressMoved = false;
+
+    // Swipe (move cursor)
+    let swipe = { active:false, x:0, y:0, t:0 };
+    const SWIPE_THRESHOLD = 28;
+    const SWIPE_MAX_TIME = 600;
+
+    // ============================================================
+    // Helpers
+    // ============================================================
+    const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+    function idx(x,y){ return y*cols + x; }
+    function inBounds(x,y){ return x>=0 && x<cols && y>=0 && y<rows; }
+
+    function neighbors(x,y){
+      const out = [];
+      for(let dy=-1; dy<=1; dy++){
+        for(let dx=-1; dx<=1; dx++){
+          if(dx===0 && dy===0) continue;
+          const nx=x+dx, ny=y+dy;
+          if(inBounds(nx,ny)) out.push([nx,ny]);
+        }
+      }
+      return out;
+    }
+
+    function pad2(n){ return (n<10 ? "0":"") + n; }
+    function fmtTime(sec){
+      sec = Math.max(0, sec|0);
+      const m=(sec/60)|0, s=sec%60;
+      return pad2(m)+":"+pad2(s);
+    }
+
+    function randInt(n){ return (Math.random()*n)|0; }
+
+    // ============================================================
+    // Responsive cell size
+    // ============================================================
+    function updateCellSize(){
+      const rect = boardWrap.getBoundingClientRect();
+      // Leave room for padding and borders
+      const usableW = rect.width - 30;
+      const usableH = rect.height - 30;
+      const gap = 2;
+      const cellW = Math.floor((usableW - gap*(cols-1)) / cols);
+      const cellH = Math.floor((usableH - gap*(rows-1)) / rows);
+      const cell = clamp(Math.min(cellW, cellH), 18, 48);
+      document.documentElement.style.setProperty("--cell", cell+"px");
+    }
+    window.addEventListener("resize", () => { updateCellSize(); renderAll(); }, {passive:true});
+    window.addEventListener("orientationchange", () => setTimeout(()=>{ updateCellSize(); renderAll(); }, 60), {passive:true});
+
+    // ============================================================
+    // Build / Reset
+    // ============================================================
+    function setDifficulty(i){
+      diffIndex = (i+DIFFS.length) % DIFFS.length;
+      const d = DIFFS[diffIndex];
+      cols = d.cols; rows = d.rows; minesTotal = d.mines;
+      btnDiff.textContent = `Difficulty: ${d.name}`;
+      newGame();
+    }
+
+    function newGame(){
+      over = false; win = false; paused = false;
+      firstClick = true;
+      flags = 0; openCount = 0;
+      invShield = 0; invScan = 0; magnetOn = false;
+      slowSecondsLeft = 0;
+
+      cursor.x = 0; cursor.y = 0;
+
+      grid = new Array(cols*rows).fill(null).map(()=>({
+        mine:false,
+        open:false,
+        flag:false,
+        n:0,
+        pu:"" // "", "shield", "scan", "magnet", "slow"
+      }));
+
+      safeTotal = rows*cols - minesTotal;
+
+      buildDOM();
+      updateCellSize();
+      hideEnd();
+
+      startTimer();
+      renderAll();
+      updateHud();
+    }
+
+    function buildDOM(){
+      boardEl.style.setProperty("--cols", cols);
+      boardEl.style.setProperty("--rows", rows);
+      boardEl.innerHTML = "";
+
+      const frag = document.createDocumentFragment();
+      for(let y=0;y<rows;y++){
+        for(let x=0;x<cols;x++){
+          const d = document.createElement("div");
+          d.className = "cell closed";
+          d.setAttribute("data-x", x);
+          d.setAttribute("data-y", y);
+          d.setAttribute("role", "button");
+          d.setAttribute("aria-label", "cell");
+          // pointer handlers
+          d.addEventListener("pointerdown", onCellPointerDown, {passive:false});
+          d.addEventListener("pointerup", onCellPointerUp, {passive:false});
+          d.addEventListener("pointermove", onCellPointerMove, {passive:false});
+          d.addEventListener("pointercancel", onCellPointerCancel, {passive:true});
+          // right click flag
+          d.addEventListener("contextmenu", (e)=>{ e.preventDefault(); toggleFlag(x,y); }, {passive:false});
+          frag.appendChild(d);
+        }
+      }
+      boardEl.appendChild(frag);
+    }
+
+    // ============================================================
+    // Mine placement (safe first click)
+    // ============================================================
+    function placeMinesAvoiding(sx,sy){
+      // Avoid first cell and its neighbors (so you always get a decent opening)
+      const forbidden = new Set();
+      forbidden.add(idx(sx,sy));
+      for(const [nx,ny] of neighbors(sx,sy)) forbidden.add(idx(nx,ny));
+
+      let placed = 0;
+      while(placed < minesTotal){
+        const x = randInt(cols);
+        const y = randInt(rows);
+        const id = idx(x,y);
+        if(forbidden.has(id)) continue;
+        if(grid[id].mine) continue;
+        grid[id].mine = true;
+        placed++;
+      }
+
+      // Compute numbers
+      for(let y=0;y<rows;y++){
+        for(let x=0;x<cols;x++){
+          const c = grid[idx(x,y)];
+          if(c.mine){ c.n = 0; continue; }
+          let n=0;
+          for(const [nx,ny] of neighbors(x,y)){
+            if(grid[idx(nx,ny)].mine) n++;
+          }
+          c.n = n;
+        }
+      }
+
+      // Sprinkle powerups on SOME safe cells (not mines, not first area)
+      // Drop rates tuned to be fun but not OP.
+      for(let y=0;y<rows;y++){
+        for(let x=0;x<cols;x++){
+          const id = idx(x,y);
+          const c = grid[id];
+          if(c.mine) continue;
+          if(forbidden.has(id)) continue;
+          const r = Math.random();
+          if(r < 0.018) c.pu = "shield";
+          else if(r < 0.040) c.pu = "scan";
+          else if(r < 0.052) c.pu = "magnet";
+          else if(r < 0.068) c.pu = "slow";
+        }
+      }
+    }
+
+    // ============================================================
+    // Open / Flag
+    // ============================================================
+    function openCell(x,y){
+      if(over || paused) return;
+      if(!inBounds(x,y)) return;
+
+      const c = grid[idx(x,y)];
+      if(c.open || c.flag) return;
+
+      if(firstClick){
+        placeMinesAvoiding(x,y);
+        firstClick = false;
+      }
+
+      // If mine
+      if(c.mine){
+        if(invShield > 0){
+          invShield--;
+          // Convert this mine into safe cell (so shield feels great)
+          c.mine = false;
+          // recompute numbers around it only (local update)
+          for(let yy=y-1; yy<=y+1; yy++){
+            for(let xx=x-1; xx<=x+1; xx++){
+              if(!inBounds(xx,yy)) continue;
+              const cc = grid[idx(xx,yy)];
+              if(cc.mine) continue;
+              let n=0;
+              for(const [nx,ny] of neighbors(xx,yy)){
+                if(grid[idx(nx,ny)].mine) n++;
+              }
+              cc.n = n;
+            }
+          }
+          // Open as normal
+        } else {
+          // explode
+          c.open = true;
+          endGame(false);
+          renderAll();
+          return;
+        }
+      }
+
+      floodOpen(x,y);
+      if(magnetOn) applyMagnetHints();
+
+      checkWin();
+      renderAll();
+      updateHud();
+    }
+
+    function floodOpen(sx,sy){
+      const stack = [[sx,sy]];
+      while(stack.length){
+        const [x,y] = stack.pop();
+        const id = idx(x,y);
+        const c = grid[id];
+        if(c.open || c.flag) continue;
+        c.open = true;
+        openCount++;
+
+        // powerup pickup
+        if(c.pu){
+          collectPowerup(c.pu);
+          c.pu = "";
+        }
+
+        // if number is 0 => open neighbors too
+        if(c.n === 0){
+          for(const [nx,ny] of neighbors(x,y)){
+            const nc = grid[idx(nx,ny)];
+            if(!nc.open && !nc.flag) stack.push([nx,ny]);
+          }
+        }
+      }
+    }
+
+    function toggleFlag(x,y){
+      if(over || paused) return;
+      if(!inBounds(x,y)) return;
+      const c = grid[idx(x,y)];
+      if(c.open) return;
+
+      c.flag = !c.flag;
+      flags += c.flag ? 1 : -1;
+      renderCell(x,y);
+      updateHud();
+      if(magnetOn) applyMagnetHints();
+    }
+
+    // Chording: if open number cell and flags around == n, open remaining neighbors
+    function chordOpen(x,y){
+      if(over || paused) return;
+      const c = grid[idx(x,y)];
+      if(!c.open || c.n === 0) return;
+
+      let flagged=0, closed=0;
+      const neigh = neighbors(x,y);
+      for(const [nx,ny] of neigh){
+        const nc = grid[idx(nx,ny)];
+        if(nc.flag) flagged++;
+        if(!nc.open && !nc.flag) closed++;
+      }
+      if(flagged === c.n && closed > 0){
+        for(const [nx,ny] of neigh){
+          const nc = grid[idx(nx,ny)];
+          if(!nc.open && !nc.flag) openCell(nx,ny);
+        }
+      }
+    }
+
+    // ============================================================
+    // Powerups
+    // ============================================================
+    function collectPowerup(pu){
+      if(pu === "shield"){
+        invShield++;
+      } else if(pu === "scan"){
+        invScan++;
+      } else if(pu === "magnet"){
+        magnetOn = true;
+      } else if(pu === "slow"){
+        slowSecondsLeft += 10;
+      }
+      updateHud();
+    }
+
+    function useScan(){
+      if(over || paused) return;
+      if(invScan <= 0) return;
+      invScan--;
+
+      // Open 3x3 around cursor safely (if mine and no shield -> still lose)
+      for(let dy=-1; dy<=1; dy++){
+        for(let dx=-1; dx<=1; dx++){
+          const x = cursor.x + dx;
+          const y = cursor.y + dy;
+          if(inBounds(x,y)){
+            const c = grid[idx(x,y)];
+            if(!c.open && !c.flag){
+              openCell(x,y);
+              if(over) break;
+            }
+          }
+        }
+        if(over) break;
+      }
+      updateHud();
+    }
+
+    // Magnet hint: deterministic “obvious flags”
+    function applyMagnetHints(){
+      // For each open number cell:
+      // If number - flaggedNeighbors == closedNeighbors => all closedNeighbors are mines => flag them.
+      let changed = false;
+      for(let y=0;y<rows;y++){
+        for(let x=0;x<cols;x++){
+          const c = grid[idx(x,y)];
+          if(!c.open || c.n === 0) continue;
+
+          let flagged=0;
+          const closedCells = [];
+          for(const [nx,ny] of neighbors(x,y)){
+            const nc = grid[idx(nx,ny)];
+            if(nc.flag) flagged++;
+            else if(!nc.open) closedCells.push([nx,ny]);
+          }
+
+          const need = c.n - flagged;
+          if(need > 0 && need === closedCells.length){
+            for(const [nx,ny] of closedCells){
+              const nc = grid[idx(nx,ny)];
+              if(!nc.flag){
+                nc.flag = true;
+                flags++;
+                changed = true;
+                renderCell(nx,ny);
+              }
+            }
+          }
+        }
+      }
+      if(changed) updateHud();
+    }
+
+    // ============================================================
+    // Win/Lose
+    // ============================================================
+    function checkWin(){
+      const safeLeft = safeTotal - openCount;
+      if(safeLeft <= 0 && !over){
+        endGame(true);
+      }
+    }
+
+    function endGame(isWin){
+      over = true;
+      win = isWin;
+      pauseTimer();
+
+      // reveal all mines on loss
+      if(!isWin){
+        for(let y=0;y<rows;y++){
+          for(let x=0;x<cols;x++){
+            const c = grid[idx(x,y)];
+            if(c.mine) c.open = true;
+          }
+        }
+      }
+
+      showEnd(isWin);
+      updateHud();
+    }
+
+    function showEnd(isWin){
+      endTitle.textContent = isWin ? "YOU WIN" : "BOOM!";
+      const timeSec = getTimeSeconds();
+      endSub.innerHTML = `
+        Time: <b>${fmtTime(timeSec)}</b><br/>
+        Difficulty: <b>${DIFFS[diffIndex].name}</b> • Mines: <b>${minesTotal}</b><br/>
+        Opened: <b>${openCount}</b> / <b>${safeTotal}</b> safe cells • Flags: <b>${flags}</b><br/>
+        Bonuses: Shield <b>${invShield}</b>, Scan <b>${invScan}</b>, Magnet <b>${magnetOn ? "ON" : "OFF"}</b>, Slow <b>${slowSecondsLeft}s</b>
+      `;
+      endOverlay.classList.remove("hidden");
+    }
+
+    function hideEnd(){
+      endOverlay.classList.add("hidden");
+    }
+
+    // ============================================================
+    // Timer (with Slow bonus)
+    // ============================================================
+    function startTimer(){
+      startMs = performance.now();
+      lastShownSec = -1;
+      hudTime.textContent = "00:00";
+      if(timerHandle) clearInterval(timerHandle);
+      timerHandle = setInterval(()=>{
+        if(paused || over) return;
+        updateTimeHud();
+      }, 120);
+    }
+
+    function pauseTimer(){
+      paused = true;
+      btnPause.textContent = "Resume (P)";
+    }
+
+    function resumeTimer(){
+      paused = false;
+      btnPause.textContent = "Pause (P)";
+      // adjust start to keep time continuous
+      startMs = performance.now() - getTimeSeconds()*1000 - slowConsumedMs();
+    }
+
+    function slowConsumedMs(){
+      // slowSecondsLeft means “time credit” that reduces displayed elapsed seconds.
+      // We consume it as time passes: every real second we spend 1 credit second if available.
+      // We'll implement consumption in updateTimeHud().
+      // Here return 0 because we track via slowSecondsLeft in seconds.
+      return 0;
+    }
+
+    function getTimeSeconds(){
+      // time shown = realElapsed - consumedSlow
+      // consumedSlow = initialSlow - slowSecondsLeftConsumed? We do direct approach:
+      // We'll store an accumulator of real elapsed and subtract used slow in updateTimeHud.
+      // For simplicity: we maintain displayedSeconds separately.
+      return displayedSeconds;
+    }
+
+    let displayedSeconds = 0;
+    let timeAccumulator = 0;
+
+    function updateTimeHud(){
+      const now = performance.now();
+      const realSec = (now - startMs)/1000;
+
+      // We accumulate real time and then apply "slow" by not increasing displayedSeconds
+      // while slowSecondsLeft > 0.
+      // Implementation: compute delta since last update using accumulator.
+      const target = realSec;
+      const delta = target - timeAccumulator;
+      if(delta <= 0) return;
+      timeAccumulator = target;
+
+      // consume delta seconds in small chunks
+      let ds = delta;
+      while(ds > 0){
+        const step = Math.min(ds, 0.25);
+        if(slowSecondsLeft > 0){
+          slowSecondsLeft -= step;
+          if(slowSecondsLeft < 0) slowSecondsLeft = 0;
+          // do not add to displayedSeconds
+        } else {
+          displayedSeconds += step;
+        }
+        ds -= step;
+      }
+
+      const secInt = displayedSeconds | 0;
+      if(secInt !== lastShownSec){
+        lastShownSec = secInt;
+        hudTime.textContent = fmtTime(secInt);
+        stSlow.textContent = `${Math.ceil(slowSecondsLeft)}s`;
+      }
+    }
+
+    // ============================================================
+    // Rendering
+    // ============================================================
+    function colorForNum(n){
+      // no CSS color picks; keep simple inline palette
+      const colors = [
+        "rgba(232,240,255,0.9)",
+        "rgba(122,167,255,0.95)", //1
+        "rgba(107,255,177,0.95)", //2
+        "rgba(255,211,107,0.95)", //3
+        "rgba(255,107,107,0.95)", //4
+        "rgba(255,130,200,0.95)", //5
+        "rgba(190,120,255,0.95)", //6
+        "rgba(180,220,255,0.95)", //7
+        "rgba(255,255,255,0.95)"  //8
+      ];
+      return colors[clamp(n,0,8)];
+    }
+
+    function renderAll(){
+      for(let y=0;y<rows;y++){
+        for(let x=0;x<cols;x++){
+          renderCell(x,y);
+        }
+      }
+      renderCursor();
+    }
+
+    function renderCursor(){
+      // remove all previous focus classes
+      const prev = boardEl.querySelector(".cell.focus");
+      if(prev) prev.classList.remove("focus");
+      const el = cellEl(cursor.x,cursor.y);
+      if(el) el.classList.add("focus");
+    }
+
+    function cellEl(x,y){
+      return boardEl.children[idx(x,y)] || null;
+    }
+
+    function renderCell(x,y){
+      const c = grid[idx(x,y)];
+      const el = cellEl(x,y);
+      if(!el) return;
+
+      el.className = "cell";
+      el.removeAttribute("data-pu");
+      el.textContent = "";
+
+      if(!c.open){
+        el.classList.add("closed");
+        if(c.flag) el.classList.add("flag");
+      } else {
+        el.classList.add("open");
+        if(c.mine){
+          el.classList.add("mine");
+        } else {
+          // number
+          if(c.n > 0){
+            const s = document.createElement("span");
+            s.className = "num";
+            s.textContent = String(c.n);
+            s.style.color = colorForNum(c.n);
+            el.appendChild(s);
+          }
+          // powerup icon shown only when open and still present (but we remove on pickup in floodOpen)
+        }
+
+        // if cell has pu (rarely only if opened without pickup; not used) - keep for completeness
+        if(c.pu){
+          el.classList.add("pu");
+          el.setAttribute("data-pu", puIcon(c.pu));
+        }
+      }
+    }
+
+    function puIcon(pu){
+      if(pu==="shield") return "🛡";
+      if(pu==="scan") return "🔎";
+      if(pu==="magnet") return "🧲";
+      if(pu==="slow") return "⏳";
+      return "";
+    }
+
+    function updateHud(){
+      hudMode.textContent = magnetOn ? "Magnet" : "Normal";
+      hudMines.textContent = String(minesTotal);
+      hudFlags.textContent = String(flags);
+      hudSafeLeft.textContent = String(Math.max(0, safeTotal - openCount));
+
+      stShield.textContent = String(invShield);
+      stScan.textContent = String(invScan);
+      stMagnet.textContent = magnetOn ? "ON" : "OFF";
+      stSlow.textContent = `${Math.ceil(slowSecondsLeft)}s`;
+    }
+
+    // ============================================================
+    // Pointer / Touch logic (tap open, long tap flag)
+    // ============================================================
+    function onCellPointerDown(e){
+      if(over) return;
+      const el = e.currentTarget;
+      const x = parseInt(el.getAttribute("data-x"),10);
+      const y = parseInt(el.getAttribute("data-y"),10);
+
+      cursor.x = x; cursor.y = y;
+      renderCursor();
+
+      pressMoved = false;
+
+      // long press => flag
+      clearTimeout(pressTimer);
+      pressTimer = setTimeout(()=>{
+        toggleFlag(x,y);
+        pressTimer = null;
+      }, 420);
+
+      // swipe start
+      swipe.active = true;
+      swipe.x = e.clientX;
+      swipe.y = e.clientY;
+      swipe.t = performance.now();
+
+      e.preventDefault();
+    }
+
+    function onCellPointerMove(e){
+      if(!swipe.active) return;
+      const dx = e.clientX - swipe.x;
+      const dy = e.clientY - swipe.y;
+      if(Math.abs(dx) > 6 || Math.abs(dy) > 6){
+        pressMoved = true;
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      e.preventDefault();
+    }
+
+    function onCellPointerUp(e){
+      const el = e.currentTarget;
+      const x = parseInt(el.getAttribute("data-x"),10);
+      const y = parseInt(el.getAttribute("data-y"),10);
+
+      // swipe detection for moving cursor (optional)
+      if(swipe.active){
+        swipe.active = false;
+        const dt = performance.now() - swipe.t;
+        const dx = e.clientX - swipe.x;
+        const dy = e.clientY - swipe.y;
+        if(dt <= SWIPE_MAX_TIME){
+          if(Math.abs(dx) > SWIPE_THRESHOLD || Math.abs(dy) > SWIPE_THRESHOLD){
+            clearTimeout(pressTimer); pressTimer=null;
+            if(Math.abs(dx) > Math.abs(dy)){
+              moveCursor(dx>0 ? "right":"left");
+            }else{
+              moveCursor(dy>0 ? "down":"up");
+            }
+            e.preventDefault();
+            return;
+          }
+        }
+      }
+
+      if(pressTimer){
+        clearTimeout(pressTimer);
+        pressTimer = null;
+
+        // normal tap opens (but if moved significantly, don't)
+        if(!pressMoved){
+          const c = grid[idx(x,y)];
+          if(c.open){
+            chordOpen(x,y);
+          }else{
+            openCell(x,y);
+          }
+        }
+      }
+      e.preventDefault();
+    }
+
+    function onCellPointerCancel(){
+      clearTimeout(pressTimer);
+      pressTimer = null;
+      swipe.active = false;
+    }
+
+    // ============================================================
+    // Cursor movement + keyboard
+    // ============================================================
+    function moveCursor(dir){
+      if(dir==="up") cursor.y = Math.max(0, cursor.y-1);
+      else if(dir==="down") cursor.y = Math.min(rows-1, cursor.y+1);
+      else if(dir==="left") cursor.x = Math.max(0, cursor.x-1);
+      else if(dir==="right") cursor.x = Math.min(cols-1, cursor.x+1);
+      renderCursor();
+    }
+
+    function openAtCursor(){
+      const c = grid[idx(cursor.x,cursor.y)];
+      if(c.open) chordOpen(cursor.x,cursor.y);
+      else openCell(cursor.x,cursor.y);
+    }
+
+    function flagAtCursor(){
+      toggleFlag(cursor.x,cursor.y);
+    }
+
+    window.addEventListener("keydown", (e)=>{
+      const k = e.key.toLowerCase();
+
+      if(["arrowup","arrowdown","arrowleft","arrowright"," ","w","a","s","d","f"].includes(k)){
+        e.preventDefault();
+      }
+
+      if(k==="p"){
+        e.preventDefault();
+        if(over) return;
+        if(paused) resumeTimer();
+        else pauseTimer();
+        return;
+      }
+      if(k==="r"){
+        e.preventDefault();
+        newGame();
+        return;
+      }
+      if(k==="e"){
+        // use scan
+        e.preventDefault();
+        useScan();
+        return;
+      }
+
+      if(paused || over) return;
+
+      if(k==="arrowup" || k==="w") moveCursor("up");
+      else if(k==="arrowdown" || k==="s") moveCursor("down");
+      else if(k==="arrowleft" || k==="a") moveCursor("left");
+      else if(k==="arrowright" || k==="d") moveCursor("right");
+      else if(k===" ") openAtCursor();
+      else if(k==="f") flagAtCursor();
+    }, {passive:false});
+
+    // Mobile buttons
+    btnOpen.addEventListener("click", openAtCursor);
+    btnFlag.addEventListener("click", flagAtCursor);
+
+    // ============================================================
+    // Buttons
+    // ============================================================
+    btnNew.addEventListener("click", newGame);
+    btnDiff.addEventListener("click", () => setDifficulty(diffIndex+1));
+    btnPause.addEventListener("click", () => {
+      if(over) return;
+      if(paused) resumeTimer();
+      else pauseTimer();
+    });
+    btnAgain.addEventListener("click", newGame);
+
+    // ============================================================
+    // Init
+    // ============================================================
+    setDifficulty(diffIndex); // will call newGame()
+
+  })();
+  </script>
+</body>
+</html>
